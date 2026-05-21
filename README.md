@@ -1,5 +1,7 @@
 # Maya Gate
 
+> **⚠️ WARNING: Maya Gate is middleware.** It hooks into your AI tools (Claude Code, OpenCode, git) and validates every output. If it breaks or misbehaves, it **will** block your AI from writing code until removed. If you spot inconsistencies, bugs, or unexpected blocks, run the **uninstall script immediately** to restore normal operation.
+
 AI output validation gate. Validates, scores, and secures AI-generated code — syntax checks, ruff linting, snip filtering, framework-specific audits, DLP scanning, and signed attestations.
 
 ```
@@ -32,13 +34,27 @@ maya-gate score mycode.py            # quality score
 maya-gate check mycode.py --dlp      # secret scanning
 ```
 
-## Install Hooks
+## Install
 
 ```bash
-maya-gate install
+# From the repo
+python3 maya-gate.py install
+
+# Or using the install script
+bash maya-gate-install.sh
 ```
 
-Installs git pre-commit, Claude Code PreToolUse hook, and OpenCode plugin.
+Installs git pre-commit hook, Claude Code PreToolUse hook, OpenCode plugin, and shell alias.
+
+## Uninstall
+
+```bash
+bash maya-gate-uninstall.sh
+```
+
+Removes all hooks and plugins. Script files are kept at `~/scripts/` so you can reinstall later with `python3 maya-gate.py install`.
+
+> If maya-gate breaks or starts blocking legitimate AI output, **run the uninstall script first**, then investigate.
 
 ## Framework Checks
 
