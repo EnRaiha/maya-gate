@@ -1,7 +1,5 @@
 # Maya Gate
 
-> **⚠️ WARNING: Maya Gate is middleware.** It hooks into your AI tools (Claude Code, OpenCode, git) and validates every output. If it breaks or misbehaves, it **will** block your AI from writing code until removed. If you spot inconsistencies, bugs, or unexpected blocks, run the **uninstall script immediately** to restore normal operation.
-
 AI output validation gate. Validates, scores, and secures AI-generated code — syntax checks, ruff linting, snip filtering, framework-specific audits, DLP scanning, and signed attestations.
 
 ```
