@@ -28,7 +28,7 @@ import hashlib
 import time
 from pathlib import Path
 from datetime import datetime, timezone
-from maya_gate_lib import load_config, validate_file, SKILLS_DIRS, hash_file, ENTERPRISE
+from maya_gate_lib import load_config, validate_file_with_pipeline, SKILLS_DIRS, hash_file, ENTERPRISE
 
 ENTERPRISE_MSG = "🔒 Enterprise feature — upgrade at github.com/EnRaiha/maya-gate"
 
@@ -447,7 +447,7 @@ def main():
 
     if args.command == "attest":
         _require_enterprise()
-        from maya_gate_lib import create_attestation, verify_attestation, list_attestations, validate_file, load_config
+        from maya_gate_lib import create_attestation, verify_attestation, list_attestations, validate_file_with_pipeline, load_config
         from pathlib import Path
         att_dir = Path.home() / ".maya-gate/attestations"
         
@@ -456,7 +456,7 @@ def main():
                 print(f"❌ File not found: {args.target}")
                 sys.exit(1)
             cfg = load_config()
-            ok, results = validate_file(args.target, cfg)
+            ok, results = validate_file_with_pipeline(args.target, cfg)
             att = create_attestation(args.target, {"pass": ok, "checks": results}, cfg["level"])
             print(f"✅ Attestation created: {att['id']}")
             print(f"   File: {att['file']['path']}")
@@ -887,7 +887,7 @@ def gate_file(fp):
     ext = Path(fp).suffix
     if ext not in config["watch_extensions"]:
         return True
-    ok, results = validate_file(fp, config)
+    ok, results = validate_file_with_pipeline(fp, config)
     print_report(ok, results, fp, config["quiet"])
     return ok
 

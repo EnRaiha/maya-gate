@@ -160,6 +160,55 @@ def validate_file(fp, cfg):
     return ok, results
 
 
+def validate_file_with_pipeline(fp, cfg):
+    """
+    Augment validate_file with GatePipeline (DLP + convention checks).
+    Same signature as validate_file() for drop-in replacement.
+    PR #14 Pattern: compose existing checkers with new pipeline checkers.
+    """
+    # 1. Run existing checks
+    ok, results = validate_file(fp, cfg)
+
+    # 2. Run GatePipeline checks (DLP, etc.)
+    try:
+        import asyncio
+        from maya_gate_core import GatePipeline, GateConfig, DlPChecker
+
+        gate_config = GateConfig(
+            checks_enabled={
+                "dlp": True,
+                "syntax": cfg["checks"].get("syntax", True),
+            }
+        )
+        checker = DlPChecker()
+        pipeline = GatePipeline(checkers=[checker], config=gate_config)
+        findings = asyncio.run(pipeline.run([fp]))
+
+        for f in findings:
+            key = f"maya-gate/{f.checker}"
+            results[key] = {
+                "pass": f.level != "block",
+                "detail": f.message,
+            }
+            if f.level == "block":
+                ok = False
+    except Exception as e:
+        results["maya-gate/pipeline"] = {"pass": True, "detail": f"pipeline unavailable: {e}"}
+
+    # 3. Run existing DLP check
+    try:
+        dlp_findings = check_dlp(fp)
+        if dlp_findings:
+            results["dlp"] = {"pass": False, "detail": f"{len(dlp_findings)} issue(s)"}
+            ok = False
+            for df in dlp_findings:
+                results[f"dlp/{df['id']}"] = {"pass": False, "detail": f"L{df['line']}: {df['name']}"}
+    except Exception:
+        pass
+
+    return ok, results
+
+
 def hash_file(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
