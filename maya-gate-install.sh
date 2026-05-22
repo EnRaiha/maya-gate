@@ -7,8 +7,10 @@ set -e
 
 MAYA_HOME="${MAYA_HOME:-$HOME}"
 GATE_SCRIPT="$MAYA_HOME/scripts/maya-gate.py"
+GATE_LIB="$MAYA_HOME/scripts/maya_gate_lib.py"
 CONFIG_DIR="$MAYA_HOME/.config/maya-gate"
 OPENCODE_PLUGIN="$MAYA_HOME/.opencode/plugin/maya-gate.ts"
+GATE_REPO="https://raw.githubusercontent.com/EnRaiha/maya-gate/main"
 
 echo ""
 echo "  ╔══════════════════════════════════════════╗"
@@ -16,107 +18,21 @@ echo "  ║      Maya Gate — One-Click Install       ║"
 echo "  ╚══════════════════════════════════════════╝"
 echo ""
 
-# 1. Copy gate script
-echo "  📦 Installing gate script..."
+# 1. Download gate script + lib
+echo "  📦 Downloading Maya Gate from GitHub..."
 mkdir -p "$MAYA_HOME/scripts"
-cat > "$GATE_SCRIPT" << 'GATE_EOF'
-#!/usr/bin/env python3
-"""Maya Gate — validated inline via install script"""
-import subprocess, sys, os, json, tempfile, shutil
-from pathlib import Path
-
-CONFIG_DIR = Path.home() / ".config/maya-gate"
-CONFIG_FILE = CONFIG_DIR / "config.json"
-
-DEFAULT_CONFIG = {
-    "level": "l2",
-    "max_iterations": 3,
-    "checks": {"syntax": True, "ruff": True, "snip": True, "compile": True},
-    "watch_extensions": [".py", ".js", ".ts", ".rs", ".go", ".java"],
-    "quiet": False
-}
-
-def load_config():
-    if CONFIG_FILE.exists():
-        with open(CONFIG_FILE) as f:
-            return {**DEFAULT_CONFIG, **json.load(f)}
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(DEFAULT_CONFIG, f, indent=2)
-    return DEFAULT_CONFIG
-
-def check_syntax(fp):
-    ext = Path(fp).suffix
-    if ext == ".py":
-        r = subprocess.run([sys.executable, "-c", f"compile(open('{fp}').read(), '{fp}', 'exec')"], capture_output=True, text=True)
-        return r.returncode == 0, r.stderr
-    if ext in (".js", ".ts"):
-        r = subprocess.run(["node", "--check", fp], capture_output=True, text=True)
-        return r.returncode == 0, r.stderr
-    if ext == ".rs":
-        r = subprocess.run(["rustc", "--edition", "2021", fp, "-o", "/dev/null"], capture_output=True, text=True)
-        return r.returncode == 0, r.stderr
-    return True, ""
-
-def check_ruff(fp):
-    if not shutil.which("ruff"): return True, ""
-    r = subprocess.run(["ruff", "check", str(fp), "--quiet"], capture_output=True, text=True)
-    return r.returncode == 0, r.stdout or r.stderr
-
-def check_snip(fp):
-    if not shutil.which("snip"): return True, ""
-    r = subprocess.run(["snip", "run", "--", "cat", str(fp)], capture_output=True, text=True, timeout=10)
-    return r.returncode == 0, r.stdout or r.stderr
-
-def validate(fp, cfg):
-    results = {}
-    ok = True
-    if cfg["checks"]["syntax"]:
-        p, e = check_syntax(fp); results["syntax"] = {"pass": p, "detail": e.strip()}; ok &= p
-    if cfg["checks"]["ruff"]:
-        p, e = check_ruff(fp); results["ruff"] = {"pass": p, "detail": e.strip()}; ok &= p
-    if cfg["checks"]["snip"]:
-        p, e = check_snip(fp); results["snip"] = {"pass": p, "detail": e.strip()}; ok &= p
-    return ok, results
-
-def main():
-    import argparse
-    p = argparse.ArgumentParser()
-    p.add_argument("--file"); p.add_argument("--code"); p.add_argument("--install", action="store_true")
-    p.add_argument("--level", choices=["l1","l2","l3"]); p.add_argument("--quiet", action="store_true")
-    a = p.parse_args()
-
-    if a.install:
-        print("Already installed!")
-        return
-
-    cfg = load_config()
-    if a.level:
-        cfg["checks"]["ruff"] = a.level in ("l2","l3")
-        cfg["checks"]["snip"] = a.level in ("l2","l3")
-
-    if a.file:
-        ok, r = validate(a.file, cfg)
-        for c, d in r.items():
-            i = "✅" if d["pass"] else "❌"
-            dt = f" — {d['detail'][:80]}" if d["detail"] else ""
-            print(f"    {i} {c:8s}{dt}")
-        sys.exit(0 if ok else 1)
-
-    if a.code:
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(a.code); t = f.name
-        ok, r = validate(t, cfg)
-        Path(t).unlink(missing_ok=True)
-        sys.exit(0 if ok else 1)
-
-    p.print_help()
-
-if __name__ == "__main__":
-    main()
-GATE_EOF
+if command -v curl &>/dev/null; then
+    curl -sL "$GATE_REPO/maya-gate.py" -o "$GATE_SCRIPT"
+    curl -sL "$GATE_REPO/maya_gate_lib.py" -o "$GATE_LIB"
+elif command -v wget &>/dev/null; then
+    wget -q "$GATE_REPO/maya-gate.py" -O "$GATE_SCRIPT"
+    wget -q "$GATE_REPO/maya_gate_lib.py" -O "$GATE_LIB"
+else
+    echo "  ❌ curl or wget required. Install one and retry."
+    exit 1
+fi
 chmod +x "$GATE_SCRIPT"
-echo "  ✅ Gate script installed"
+echo "  ✅ Maya Gate downloaded ($(wc -l < "$GATE_SCRIPT") lines)"
 
 # 2. Create default config
 echo "  ⚙️  Creating config..."
@@ -168,9 +84,11 @@ echo "  ║  Usage:                                   ║"
 echo "  ║    maya-gate --file app.py                ║"
 echo "  ║    maya-gate --code 'print(1)'            ║"
 echo "  ║    maya-gate --level l3 --file app.py     ║"
-echo "  ║    maya-gate --config                     ║"
+echo "  ║    maya-gate --pipeline --file app.py     ║"
 echo "  ║                                          ║"
 echo "  ║  Levels: l1(syntax) l2(lint) l3(full)     ║"
+echo "  ║  Pipeline: DLP + convention checks run     ║"
+echo "  ║           automatically at l3              ║"
 echo "  ║  Config: $CONFIG_DIR/config.json          ║"
 echo "  ║                                          ║"
 echo "  ╚══════════════════════════════════════════╝"
