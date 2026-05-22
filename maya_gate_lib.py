@@ -43,22 +43,31 @@ SKILLS_DIRS = [Path.home() / "plugins/maya-skills/skills", Path.home() / ".agent
 
 DEFAULT_CONFIG = {
     "level": "l2", "max_iterations": 3,
-    "checks": {"syntax": True, "ruff": True, "snip": False, "compile": True},
-    "watch_extensions": [".py", ".js", ".ts", ".rs", ".go", ".java", ".cs", ".c", ".cpp", ".h", ".hpp", ".php", ".rb"],
-    "quiet": False
+    "checks": {"syntax": True, "ruff": True, "snip": False, "compile": True, "lint": False},
+    "watch_extensions": [
+        ".py", ".js", ".ts", ".rs", ".go", ".java",
+        ".cs", ".c", ".cpp", ".h", ".hpp", ".php", ".rb",
+    ],
+    "quiet": False,
 }
 
 LEVELS = {
-    "l1": {"syntax": True, "ruff": False, "snip": False, "compile": True},
-    "l2": {"syntax": True, "ruff": True, "snip": False, "compile": True},
-    "l3": {"syntax": True, "ruff": True, "snip": True, "compile": True},
+    "l1": {"syntax": True, "ruff": False, "snip": False, "compile": True, "lint": False},
+    "l2": {"syntax": True, "ruff": True, "snip": False, "compile": True, "lint": False},
+    "l3": {"syntax": True, "ruff": True, "snip": True, "compile": True, "lint": True},
 }
 
 
 def load_config():
+    merged = {**DEFAULT_CONFIG}
     if CONFIG_FILE.exists():
         with open(CONFIG_FILE) as f:
-            return {**DEFAULT_CONFIG, **json.load(f)}
+            user_cfg = json.load(f)
+        merged = {**merged, **user_cfg}
+        # Deep-merge checks so new keys (e.g. "lint") survive user config
+        if "checks" in user_cfg:
+            merged["checks"] = {**merged["checks"], **user_cfg["checks"]}
+        return merged
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_FILE.write_text(json.dumps(DEFAULT_CONFIG, indent=2) + "\n")
     return DEFAULT_CONFIG
@@ -140,6 +149,61 @@ def check_snip(fp):
     return r.returncode == 0, r.stdout or r.stderr
 
 
+def check_lint(fp):
+    """Dispatch language-specific linters based on file extension."""
+    import shutil
+    ext = Path(fp).suffix.lower()
+    name = Path(fp).name.lower()
+
+    # Go
+    if ext == ".go" and shutil.which("golangci-lint"):
+        r = subprocess.run(["golangci-lint", "run", str(fp)], capture_output=True, text=True, timeout=60)
+        return r.returncode == 0, r.stdout or r.stderr
+
+    # Rust
+    if ext == ".rs" and shutil.which("cargo"):
+        r = subprocess.run(["cargo", "clippy", "--", "-D", "warnings"], capture_output=True, text=True, timeout=120,
+                           cwd=Path(fp).parent)
+        return r.returncode == 0, r.stdout or r.stderr
+
+    # JS / TS
+    if ext in (".js", ".jsx", ".ts", ".tsx") and shutil.which("eslint"):
+        r = subprocess.run(["eslint", str(fp)], capture_output=True, text=True, timeout=30)
+        return r.returncode == 0, r.stdout or r.stderr
+
+    # Bash / Shell
+    if ext in (".sh", ".bash", ".zsh") and shutil.which("shellcheck"):
+        r = subprocess.run(["shellcheck", str(fp)], capture_output=True, text=True, timeout=15)
+        return r.returncode == 0, r.stdout or r.stderr
+
+    # YAML (not node_modules)
+    if ext in (".yml", ".yaml") and "/node_modules/" not in str(fp) and shutil.which("yamllint"):
+        r = subprocess.run(["yamllint", str(fp)], capture_output=True, text=True, timeout=15)
+        return r.returncode == 0, r.stdout or r.stderr
+
+    # SQL
+    if ext == ".sql" and shutil.which("sqlfluff"):
+        r = subprocess.run(["sqlfluff", "lint", str(fp)], capture_output=True, text=True, timeout=30)
+        return r.returncode == 0, r.stdout or r.stderr
+
+    # Dockerfile
+    if shutil.which("hadolint") and (name in ("dockerfile", "dockerfile.slim") or ext == ".dockerfile"):
+        r = subprocess.run(["hadolint", str(fp)], capture_output=True, text=True, timeout=15)
+        return r.returncode == 0, r.stdout or r.stderr
+
+    # Markdown (not node_modules)
+    if ext == ".md" and "/node_modules/" not in str(fp) and shutil.which("markdownlint"):
+        r = subprocess.run(["markdownlint", str(fp)], capture_output=True, text=True, timeout=15)
+        return r.returncode == 0, r.stdout or r.stderr
+
+    # GitHub Actions (.github/workflows/*.yml)
+    if ext in (".yml", ".yaml") and "/.github/workflows/" in str(fp) and shutil.which("actionlint"):
+        r = subprocess.run(["actionlint", str(fp)], capture_output=True, text=True, timeout=15)
+        return r.returncode == 0, r.stdout or r.stderr
+
+    return True, ""
+
+
 def validate_file(fp, cfg):
     results = {}
     ok = True
@@ -149,6 +213,8 @@ def validate_file(fp, cfg):
         p, e = check_ruff(fp); results["ruff"] = {"pass": p, "detail": e.strip()}; ok &= p
     if cfg["checks"]["snip"]:
         p, e = check_snip(fp); results["snip"] = {"pass": p, "detail": e.strip()}; ok &= p
+    if cfg["checks"]["lint"]:
+        p, e = check_lint(fp); results["lint"] = {"pass": p, "detail": e.strip()}; ok &= p
     # Tentacle syntax checks
     try:
         for name, t_ok, t_msg in dispatch_syntax(fp):

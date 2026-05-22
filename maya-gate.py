@@ -4,7 +4,7 @@ Maya Gate — AI Output Validation Gate v2.0
   maya-gate --file app.py              Validate a file
   maya-gate --level l1                 Syntax only (fast)
   maya-gate --level l2                 Syntax + ruff (default)
-  maya-gate --level l3                 Full + snip (slowest)
+  maya-gate --level l3                 Full + linters + snip (slowest)
   maya-gate score <file>               Quality score 0-100
   maya-gate dashboard <file>           Live terminal dashboard
   maya-gate check <file>               AI behavior patterns
